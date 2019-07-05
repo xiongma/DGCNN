@@ -7,8 +7,9 @@ blog: http://www.cnblogs.com/callyblog/
 '''
 
 import tensorflow as tf
+import os
 
-__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches']
+__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches', 'import_tf']
 
 def label_smoothing(inputs, epsilon=0.1):
     '''Applies label smoothing. See 5.4 and https://arxiv.org/abs/1512.00567.
@@ -63,3 +64,14 @@ def calc_num_batches(total_num, batch_size):
     Returns
     number of batches, allowing for remainders.'''
     return total_num // batch_size + int(total_num % batch_size != 0)
+
+def import_tf(gpu_list):
+    """
+    import tensorflow, set tensorflow graph load device
+    :param gpu_list: GPU list
+    :return: tensorflow instance
+    """
+    import tensorflow as tf
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_list)
+
+    return tf
