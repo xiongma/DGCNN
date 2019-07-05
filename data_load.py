@@ -10,6 +10,8 @@ import pandas as pd
 import tensorflow as tf
 from utils import calc_num_batches
 
+__all__ = ['get_batch', 'load_vocab']
+
 def _load_data(fpath, maxlen1, maxlne2):
     """
     load data
