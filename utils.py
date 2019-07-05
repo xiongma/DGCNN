@@ -8,6 +8,8 @@ blog: http://www.cnblogs.com/callyblog/
 
 import tensorflow as tf
 
+__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches']
+
 def label_smoothing(inputs, epsilon=0.1):
     '''Applies label smoothing. See 5.4 and https://arxiv.org/abs/1512.00567.
     inputs: 3d tensor. [N, T, V], where V is the number of vocabulary.
@@ -52,3 +54,12 @@ def split_inputs(*args):
     gpu_nums = args[0]
     args = args[1:]
     return [tf.split(arg, num_or_size_splits=gpu_nums, axis=0) for arg in args]
+
+def calc_num_batches(total_num, batch_size):
+    '''Calculates the number of batches.
+    total_num: total sample number
+    batch_size
+
+    Returns
+    number of batches, allowing for remainders.'''
+    return total_num // batch_size + int(total_num % batch_size != 0)

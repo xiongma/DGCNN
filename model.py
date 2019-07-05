@@ -165,12 +165,12 @@ class DGCNN:
 
         # start loss
         p_start_true = labels[:, 1]
-        p_start_true = label_smoothing(p_start_true)
+        p_start_true = label_smoothing(tf.one_hot(p_start_true, depth=self.hp.maxlen2))
         p_start_loss = self._cross_entropy(p_start_true, p_start)
 
         # end loss
         p_end_true = labels[:, 2]
-        p_end_true = label_smoothing(p_end_true)
+        p_end_true = label_smoothing(tf.one_hot(p_end_true, depth=self.hp.maxlen2))
         p_end_loss = self._cross_entropy(p_end_true, p_end)
 
         loss = p_global_loss + p_start_loss + p_end_loss
@@ -184,7 +184,7 @@ class DGCNN:
         :param y_pred: predicted
         :return: loss
         """
-        loss = -tf.reduce_mean(y * tf.log(tf.clip_by_value(y_pred, 1e-10, 1.0)))
+        loss = -tf.reduce_mean(y * tf.log(tf.clip_by_value(y_pred, 1e-10, 1.0))) # tf.clip_by_value, prevent loss Nan
 
         return loss
 
