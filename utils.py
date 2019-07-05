@@ -9,7 +9,7 @@ blog: http://www.cnblogs.com/callyblog/
 import tensorflow as tf
 import os
 
-__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches', 'import_tf']
+__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs']
 
 def label_smoothing(inputs, epsilon=0.1):
     '''Applies label smoothing. See 5.4 and https://arxiv.org/abs/1512.00567.
@@ -75,3 +75,34 @@ def import_tf(gpu_list):
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_list)
 
     return tf
+
+def save_variable_specs(fpath):
+    '''Saves information about variables such as
+    their name, shape, and total parameter number
+    fpath: string. output file path
+
+    Writes
+    a text file named fpath.
+    '''
+    import tensorflow as tf
+    def _get_size(shp):
+        '''Gets size of tensor shape
+        shp: TensorShape
+
+        Returns
+        size
+        '''
+        size = 1
+        for d in range(len(shp)):
+            size *=shp[d]
+        return size
+
+    params, num_params = [], 0
+    for v in tf.global_variables():
+        params.append("{}==={}".format(v.name, v.shape))
+        num_params += _get_size(v.shape)
+    print("num_params: ", num_params)
+    with open(fpath, 'w') as fout:
+        fout.write("num_params: {}\n".format(num_params))
+        fout.write("\n".join(params))
+    logging.info("Variables info has been saved.")
