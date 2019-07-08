@@ -89,9 +89,9 @@ def _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, m
     :param shuffle: whether shuffle data, When train model, it's True
     :return:
     """
-    shapes = [maxlen1], [maxlen2], [(), (), ()]
-    types = (tf.int32, tf.int32, [tf.int32, tf.int32, tf.int32])
-    paddings = (0, 0, [0, 0, 0])
+    shapes = ([maxlen1]), ([maxlen2]), ([])
+    types = ((tf.int32), (tf.int32), (tf.int32))
+    paddings = ((0), (0), (0))
     dataset = tf.data.Dataset.from_generator(generator=_generator_fn,
                                              output_shapes=shapes,
                                              output_types=types,
@@ -123,5 +123,5 @@ def get_batch(fpath, maxlen1, maxlen2, vocab_fpath, batch_size, gpu_nums, shuffl
     """
     questions, evidences, labels = _load_data(fpath, maxlen1, maxlen2)
     batches = _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, maxlen1, maxlen2, shuffle=shuffle)
-    num_batches = calc_num_batches(len(sents1), batch_size * gpu_nums)
-    return batches, num_batches, len(sents1)
+    num_batches = calc_num_batches(len(questions), batch_size * gpu_nums)
+    return batches, num_batches, len(questions)
