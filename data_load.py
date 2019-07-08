@@ -89,7 +89,7 @@ def _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, m
     :param shuffle: whether shuffle data, When train model, it's True
     :return:
     """
-    shapes = ([maxlen1]), ([maxlen2]), ([])
+    shapes = ([maxlen1]), ([maxlen2]), ([3])
     types = ((tf.int32), (tf.int32), (tf.int32))
     paddings = ((0), (0), (0))
     dataset = tf.data.Dataset.from_generator(generator=_generator_fn,
