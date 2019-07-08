@@ -6,8 +6,10 @@ mail: cally.maxiong@gmail.com
 blog: http://www.cnblogs.com/callyblog/
 '''
 
-import tensorflow as tf
+import logging
 import os
+
+import tensorflow as tf
 
 __all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs']
 
@@ -102,7 +104,7 @@ def save_variable_specs(fpath):
         params.append("{}==={}".format(v.name, v.shape))
         num_params += _get_size(v.shape)
     print("num_params: ", num_params)
-    with open(fpath, 'w') as fout:
+    with open(fpath, 'w', encoding='utf-8') as fout:
         fout.write("num_params: {}\n".format(num_params))
         fout.write("\n".join(params))
     logging.info("Variables info has been saved.")
