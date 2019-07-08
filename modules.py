@@ -32,7 +32,7 @@ def get_token_embeddings(vocab_size, num_units, zero_pad=True):
                                     embeddings[1:, :]), 0)
         return embeddings
 
-def atrous_conv1d(X, filters, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'):
+def atrous_conv1d(X, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'):
     """
     expansion of convolution
     :param X: embedding
@@ -40,6 +40,7 @@ def atrous_conv1d(X, filters, window=3, dilation=1, padding='SAME', scope='atrou
     :param window: the size of kernel length
     """
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
+        filters = X.shape.as_list()[-1]
         conv1 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, padding=padding)
         conv1 = tf.add(conv1, 0-X)
 
@@ -58,14 +59,14 @@ def attention_encoder(X, scope='attention_encoder'):
 
         attention = tf.layers.dense(X, time_step, use_bias=False, activation=tf.tanh, name='fully')
         gama = tf.get_variable(shape=[time_step, time_step], dtype=tf.float32, name='gama')
-        attention = tf.matmul(attention, gama)
+        attention = tf.multiply(attention, gama)
 
         # mask
-        padding_num = -2 ** 32 + 1
+        padding_num = -2 ** 32 + 1 # multiply max number, let 0 index of timestep equal softmax 0
         masks = tf.sign(tf.reduce_sum(tf.abs(X), axis=-1))  # [N, T]
-        masks = tf.expand_dims(masks, axis=1)  # [N, T, T]
+        masks = tf.tile(tf.expand_dims(masks, axis=1), [1, time_step, 1])  # [N, T, T]
         paddings = tf.ones_like(masks) * padding_num
-        attention = tf.where(tf.equal(masks), paddings, attention)
+        attention = tf.where(tf.equal(masks, 0), paddings, attention)
 
         attention = tf.nn.softmax(attention)
 
@@ -84,7 +85,7 @@ def positional_encoding(inputs, maxlen, masking=True, scope='positional_encoding
     returns
     3d tensor that has the same shape as inputs.
     '''
-    E = inputs.get_shape().as_list[-1]
+    E = inputs.shape.as_list()[-1]
     N, T = tf.shape(inputs)[0], tf.shape(inputs)[1]
 
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):

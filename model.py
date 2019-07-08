@@ -27,7 +27,7 @@ class DGCNN:
         with tf.variable_scope('question', reuse=tf.AUTO_REUSE):
             ques_embedd = tf.nn.embedding_lookup(self.embedding, xs)
 
-            ques_conv = atrous_conv1d(ques_embedd, self.num_units, window=3, dilation=1, padding='SAME')
+            ques_conv = atrous_conv1d(ques_embedd, window=3, dilation=1, padding='SAME')
 
             attention = attention_encoder(ques_conv)
 
@@ -49,24 +49,23 @@ class DGCNN:
             evidence_embedd = tf.nn.embedding_lookup(self.embedding, ys)
             positional_embedding = positional_encoding(evidence_embedd, maxlen)
 
-            attention = tf.tile(tf.expand_dims(attention, 0), [1, maxlen, 1]) # [N, T, H1]
+            attention = tf.tile(tf.expand_dims(attention, 1), [1, maxlen, 1]) # [N, T, H1]
 
             # concat position embedding, question attention embedding
             evidence_embedd = tf.concat([evidence_embedd, attention, positional_embedding], axis=-1) # [N, T, H+maxlen+H]
 
             # feature fusion
-            evidence_conv = atrous_conv1d(evidence_embedd, filters=self.num_units, dilation=1, window=1, scope='feature_fusion')
+            evidence_conv = atrous_conv1d(evidence_embedd, dilation=1, window=1, scope='feature_fusion')
 
             # conv
-            evidence_conv = atrous_conv1d(evidence_conv, filters=self.num_units, dilation=1, window=3, scope='atrous_conv1_dilation1')
-            evidence_conv = atrous_conv1d(evidence_conv, filters=self.num_units, dilation=2, window=3, scope='atrous_conv1_dilation2')
-            evidence_conv = atrous_conv1d(evidence_conv, filters=self.num_units, dilation=4, window=3, scope='atrous_conv1_dilation4')
+            evidence_conv = atrous_conv1d(evidence_conv, dilation=1, window=3, scope='atrous_conv1_dilation1')
+            evidence_conv = atrous_conv1d(evidence_conv, dilation=2, window=3, scope='atrous_conv1_dilation2')
+            evidence_conv = atrous_conv1d(evidence_conv, dilation=4, window=3, scope='atrous_conv1_dilation4')
 
             ques_mater_attention = attention_encoder(evidence_conv) # [N, H]
 
             # dropout
             ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=dropout_rate, training=training)
-            evidence_conv = tf.layers.dropout(evidence_conv, rate=dropout_rate, training=training)
             evidence_conv = tf.layers.dropout(evidence_conv, rate=dropout_rate, training=training)
 
             # fully connection
@@ -74,13 +73,13 @@ class DGCNN:
             p_start = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_start') # [N, T, 1]
             p_end = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_end') # [N, T, 1]
 
-            W_start = tf.get_variable(shape=[maxlen, maxlen], dtype=tf.float32, name='W_start')
-            W_end = tf.get_variable(shape=[maxlen, maxlen], dtype=tf.float32, name='W_end')
-            bias_start = tf.get_variable(shape=[maxlen], dtype=tf.float32, name='bias_start')
-            bias_end = tf.get_variable(shape=[maxlen], dtype=tf.float32, name='bias_end')
+            W_start = tf.get_variable(shape=[maxlen, 1], dtype=tf.float32, name='W_start')
+            W_end = tf.get_variable(shape=[maxlen, 1], dtype=tf.float32, name='W_end')
+            bias_start = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_start')
+            bias_end = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_end')
 
-            p_start = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.matmul(W_start, p_start), bias_start)), axis=-1) # [N, T]
-            p_end = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.matmul(W_end, p_end), bias_end)), axis=-1) # [N, T]
+            p_start = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.multiply(W_start, p_start), bias_start)), axis=-1) # [N, T]
+            p_end = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.multiply(W_end, p_end), bias_end)), axis=-1) # [N, T]
 
             return p_global, p_start, p_end
 
@@ -100,13 +99,13 @@ class DGCNN:
         losses = []
         datas = split_inputs(self.hp.gpu_nums, xs, ys, labels)
 
-        with tf.variable_scope(tf.get_variable_scope):
+        with tf.variable_scope(tf.get_variable_scope()):
             for no in range(self.hp.gpu_nums):
                 with tf.device("/gpu:%d" % no):
                     with tf.name_scope("tower_%d" % no):
                         ques_atten = self.question(datas[0][no])
                         p_global, p_start, p_end = self.evidence(datas[1][no], ques_atten, self.hp.dropout_rate,
-                                                                 self.hp.maxlen, True)
+                                                                 self.hp.maxlen2, True)
 
                         tf.get_variable_scope().reuse_variables()
                         loss = self._calc_loss(datas[2][no], p_global, p_start, p_end)
@@ -132,16 +131,16 @@ class DGCNN:
         :return: answer indexes, loss, tensorflow summary
         """
         ques_atten = self.question(xs)
-        p_global, p_start, p_end = self.evidence(ys, ques_atten, 1.0, self.hp.maxlen, False)
-
-        # get answer
-        p_start = tf.argmax(p_start, axis=0) # [N]
-        p_end = tf.argmax(p_end, axis=0) # [N]
-
-        p = tf.stack([p_start, p_end], axis=-1)
+        p_global, p_start, p_end = self.evidence(ys, ques_atten, 1.0, self.hp.maxlen2, False)
 
         # loss
         loss = self._calc_loss(labels, p_global, p_start, p_end)
+
+        # get answer
+        p_start = tf.argmax(p_start, axis=1) # [N]
+        p_end = tf.argmax(p_end, axis=1) # [N]
+
+        p = tf.stack([p_start, p_end], axis=-1)
 
         tf.summary.scalar('eval_loss', loss)
         summaries = tf.summary.merge_all()
@@ -160,7 +159,7 @@ class DGCNN:
         # global loss
         p_global_true = labels[:, 0] # [N]
         p_global_true = label_smoothing(tf.one_hot(p_global_true, depth=2)) # [N, 2]
-        p_global = tf.stack([1-p_global, p_global], axis=2)
+        p_global = tf.stack([1-p_global, p_global], axis=1)
         p_global_loss = self._cross_entropy(p_global_true, p_global)
 
         # start loss
