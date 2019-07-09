@@ -30,7 +30,7 @@ class DGCNN:
 
             ques_conv = atrous_conv1d(ques_embedd, window=3, dilation=1, padding='SAME')
 
-            attention = attention_encoder(ques_conv)
+            attention = attention_encoder(ques_conv, dropout_rate=self.hp.dropout_rate)
 
             return attention
 
@@ -63,7 +63,7 @@ class DGCNN:
             evidence_conv = atrous_conv1d(evidence_conv, dilation=2, window=3, scope='atrous_conv1_dilation2')
             evidence_conv = atrous_conv1d(evidence_conv, dilation=4, window=3, scope='atrous_conv1_dilation4')
 
-            ques_mater_attention = attention_encoder(evidence_conv) # [N, H]
+            ques_mater_attention = attention_encoder(evidence_conv, dropout_rate=dropout_rate) # [N, H]
 
             # dropout
             ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=dropout_rate, training=training)
@@ -71,16 +71,13 @@ class DGCNN:
 
             # fully connection
             p_global = tf.squeeze(tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global'), axis=-1) # [N]
-            p_start = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_start') # [N, T, 1]
-            p_end = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_end') # [N, T, 1]
+            p_start = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_start_tanh') # [N, T, 1]
+            p_start = tf.layers.dense(p_start, 1, activation=tf.sigmoid, name='p_start_sigmoid') # [N, T, 1]
+            p_end = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_end_tanh') # [N, T, 1]
+            p_end = tf.layers.dense(p_end, 1, activation=tf.sigmoid, name='p_end_sigmoid') # [N, T, 1]
 
-            W_start = tf.get_variable(shape=[maxlen, 1], dtype=tf.float32, name='W_start')
-            W_end = tf.get_variable(shape=[maxlen, 1], dtype=tf.float32, name='W_end')
-            bias_start = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_start')
-            bias_end = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_end')
-
-            p_start = tf.expand_dims(p_global, axis=-1) * tf.squeeze(tf.sigmoid(tf.nn.bias_add(tf.multiply(W_start, p_start), bias_start)), axis=-1) # [N, T]
-            p_end = tf.expand_dims(p_global, axis=-1) * tf.squeeze(tf.sigmoid(tf.nn.bias_add(tf.multiply(W_end, p_end), bias_end)), axis=-1) # [N, T]
+            p_start = tf.expand_dims(p_global, axis=-1) * tf.squeeze(p_start, axis=-1) # [N, T]
+            p_end = tf.expand_dims(p_global, axis=-1) * tf.squeeze(p_end, axis=-1) # [N, T]
 
             return p_global, p_start, p_end
 
@@ -95,6 +92,8 @@ class DGCNN:
         tower_grads = []
         global_step = tf.train.get_or_create_global_step()
         global_step_ = global_step * self.hp.gpu_nums
+
+        from modules import noam_scheme
 
         optimizer = tf.train.AdamOptimizer(self.hp.lr)
         losses = []

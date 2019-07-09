@@ -53,13 +53,14 @@ def atrous_conv1d(X, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'
 
         return conv
 
-def attention_encoder(X, scope='attention_encoder'):
+def attention_encoder(X, dropout_rate=0.7, scope='attention_encoder'):
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         time_step = X.shape.as_list()[-2]
 
-        attention = tf.layers.dense(X, time_step, use_bias=False, activation=tf.tanh, name='fully')
-        gama = tf.get_variable(shape=[time_step, time_step], dtype=tf.float32, name='gama')
-        attention = tf.multiply(attention, gama)
+        # fully connection
+        X = tf.layers.dropout(X, rate=dropout_rate)
+        attention = tf.layers.dense(X, time_step, use_bias=False, activation=tf.tanh, name='tanh_fully')
+        attention = tf.layers.dense(attention, time_step, use_bias=False, activation=None, name='softmax_fully')
 
         # mask
         padding_num = -2 ** 32 + 1 # multiply max number, let 0 index of timestep equal softmax 0
