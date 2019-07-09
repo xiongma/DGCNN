@@ -11,6 +11,7 @@ import tensorflow as tf
 from modules import atrous_conv1d, attention_encoder, get_token_embeddings, positional_encoding
 from utils import split_inputs, label_smoothing
 
+__all__ = ['DGCNN']
 
 class DGCNN:
     def __init__(self, hp, zero_pad=True):
@@ -78,8 +79,8 @@ class DGCNN:
             bias_start = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_start')
             bias_end = tf.get_variable(shape=[1], dtype=tf.float32, name='bias_end')
 
-            p_start = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.multiply(W_start, p_start), bias_start)), axis=-1) # [N, T]
-            p_end = tf.squeeze(p_global * tf.sigmoid(tf.nn.bias_add(tf.multiply(W_end, p_end), bias_end)), axis=-1) # [N, T]
+            p_start = tf.expand_dims(p_global, axis=-1) * tf.squeeze(tf.sigmoid(tf.nn.bias_add(tf.multiply(W_start, p_start), bias_start)), axis=-1) # [N, T]
+            p_end = tf.expand_dims(p_global, axis=-1) * tf.squeeze(tf.sigmoid(tf.nn.bias_add(tf.multiply(W_end, p_end), bias_end)), axis=-1) # [N, T]
 
             return p_global, p_start, p_end
 
