@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from data_load import get_batch, load_vocab
 from hparams import Hparams
-from model1 import DGCNN
+from model import DGCNN
 from utils import import_tf, save_variable_specs
 
 logging.basicConfig(level=logging.INFO)
