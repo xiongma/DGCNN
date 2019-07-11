@@ -70,14 +70,14 @@ class DGCNN:
             evidence_conv = tf.layers.dropout(evidence_conv, rate=dropout_rate, training=training)
 
             # fully connection
-            p_global = tf.squeeze(tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global'), axis=-1) # [N]
-            p_start = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_start_tanh') # [N, T, 1]
-            p_start = tf.layers.dense(p_start, 1, activation=tf.sigmoid, name='p_start_sigmoid') # [N, T, 1]
-            p_end = tf.layers.dense(evidence_conv, 1, activation=tf.tanh, name='p_end_tanh') # [N, T, 1]
-            p_end = tf.layers.dense(p_end, 1, activation=tf.sigmoid, name='p_end_sigmoid') # [N, T, 1]
+            p_global = tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global') # [N, 1]
+            p_start = tf.layers.dense(evidence_conv, 128, activation=tf.tanh, name='p_start_tanh') # [N, T, 128]
+            p_start = tf.layers.dense(p_start, 2, activation=tf.sigmoid, name='p_start_sigmoid') # [N, T, 2]
+            p_end = tf.layers.dense(evidence_conv, 128, activation=tf.tanh, name='p_end_tanh') # [N, T, 128]
+            p_end = tf.layers.dense(p_end, 2, activation=tf.sigmoid, name='p_end_sigmoid') # [N, T, 2]
 
-            p_start = tf.expand_dims(p_global, axis=-1) * tf.squeeze(p_start, axis=-1) # [N, T]
-            p_end = tf.expand_dims(p_global, axis=-1) * tf.squeeze(p_end, axis=-1) # [N, T]
+            p_start = tf.expand_dims(p_global, axis=-1) * p_start # [N, T, 2]
+            p_end = tf.expand_dims(p_global, axis=-1) * p_end # [N, T, 2]
 
             return p_global, p_start, p_end
 
@@ -92,8 +92,6 @@ class DGCNN:
         tower_grads = []
         global_step = tf.train.get_or_create_global_step()
         global_step_ = global_step * self.hp.gpu_nums
-
-        from modules import noam_scheme
 
         optimizer = tf.train.AdamOptimizer(self.hp.lr)
         losses = []
@@ -119,6 +117,27 @@ class DGCNN:
             loss = sum(losses) / len(losses)
             tf.summary.scalar("train_loss", loss)
             summaries = tf.summary.merge_all()
+
+        return train_op, loss, summaries, global_step_
+
+    def train1(self, xs, ys, labels):
+        """
+        train DGCNN model
+        :param xs: question
+        :param ys: evidence
+        :param labels: labels, contain global, start, end
+        :return: train op, loss, global step, tensorflow summary
+        """
+        global_step = tf.train.get_or_create_global_step()
+        global_step_ = global_step * self.hp.gpu_nums
+
+        optimizer = tf.train.AdamOptimizer(self.hp.lr)
+        ques_atten = self.question(xs)
+        p_global, p_start, p_end = self.evidence(ys, ques_atten, self.hp.dropout_rate, self.hp.maxlen2, True)
+        loss = self._calc_loss(labels, p_global, p_start, p_end)
+        train_op = optimizer.minimize(loss, global_step=global_step)
+        tf.summary.scalar("train_loss", loss)
+        summaries = tf.summary.merge_all()
 
         return train_op, loss, summaries, global_step_
 
@@ -159,20 +178,22 @@ class DGCNN:
         # global loss
         p_global_true = labels[:, 0] # [N]
         p_global_true = label_smoothing(tf.one_hot(p_global_true, depth=2)) # [N, 2]
-        p_global = tf.stack([1-p_global, p_global], axis=1)
-        p_global_loss = self._cross_entropy(p_global_true, p_global)
+        p_global = tf.squeeze(tf.stack([1-p_global, p_global], axis=2), axis=1)
+        p_global_loss = self._focal_loss(p_global, p_global_true)
 
         # start loss
         p_start_true = labels[:, 1]
-        p_start_true = label_smoothing(tf.one_hot(p_start_true, depth=self.hp.maxlen2))
-        p_start_loss = self._cross_entropy(p_start_true, p_start)
+        p_start_true = tf.one_hot(p_start_true, depth=self.hp.maxlen2, dtype=tf.int32)
+        p_start_true = label_smoothing(tf.one_hot(p_start_true, depth=2))
+        p_start_loss = self.focal_loss(p_start, p_start_true)
 
         # end loss
         p_end_true = labels[:, 2]
-        p_end_true = label_smoothing(tf.one_hot(p_end_true, depth=self.hp.maxlen2))
-        p_end_loss = self._cross_entropy(p_end_true, p_end)
+        p_end_true = tf.one_hot(p_end_true, depth=self.hp.maxlen2, dtype=tf.int32)
+        p_end_true = label_smoothing(tf.one_hot(p_end_true, depth=2))
+        p_end_loss = self.focal_loss(p_end, p_end_true)
 
-        loss = p_global_loss + p_start_loss + p_end_loss
+        loss = p_start_loss + p_end_loss
 
         return loss
 
@@ -183,9 +204,54 @@ class DGCNN:
         :param y_pred: predicted
         :return: loss
         """
-        loss = -tf.reduce_mean(y * tf.log(tf.clip_by_value(y_pred, 1e-10, 1.0))) # tf.clip_by_value, prevent loss Nan
+        loss = -tf.reduce_mean(y * tf.log(tf.clip_by_value(y_pred, 1e-5, 1.0))) # tf.clip_by_value, prevent loss Nan
 
         return loss
+
+    def _focal_loss(self, pred, y, alpha=0.25, gamma=2):
+        """
+        focal loss
+        :param pred: predicted
+        :param y: true
+        :param alpha: alpha, default 0.25
+        :param gamma: gamma, default 2
+        :return: focal loss
+        """
+        zeros = tf.zeros_like(pred, dtype=pred.dtype)
+        pos_corr = tf.where(y > zeros, y-pred, zeros)
+        neg_corr = tf.where(y > zeros, zeros, pred)
+        fl_loss = -alpha * (pos_corr ** gamma) * tf.log(pred) - (1-alpha) * (neg_corr ** gamma) * tf.log(1.0 - pred)
+        fl_loss = tf.reduce_mean(tf.reduce_sum(fl_loss, axis=1))
+        return fl_loss
+
+    def focal_loss(self, pred, y, alpha=0.25, gamma=2):
+        r"""Compute focal loss for predictions.
+            Multi-labels Focal loss formula:
+                FL = -alpha * (z-p)^gamma * log(p) -(1-alpha) * p^gamma * log(1-p)
+                     ,which alpha = 0.25, gamma = 2, p = sigmoid(x), z = target_tensor.
+        Args:
+         pred: A float tensor of shape [batch_size, num_anchors,
+            num_classes] representing the predicted logits for each class
+         y: A float tensor of shape [batch_size, num_anchors,
+            num_classes] representing one-hot encoded classification targets
+         alpha: A scalar tensor for focal loss alpha hyper-parameter
+         gamma: A scalar tensor for focal loss gamma hyper-parameter
+        Returns:
+            loss: A (scalar) tensor representing the value of the loss function
+        """
+        zeros = tf.zeros_like(pred, dtype=pred.dtype)
+
+        # For positive prediction, only need consider front part loss, back part is 0;
+        # target_tensor > zeros <=> z=1, so positive coefficient = z - p.
+        pos_p_sub = tf.where(y > zeros, y - pred, zeros) # positive sample 寻找正样本，并进行填充
+
+        # For negative prediction, only need consider back part loss, front part is 0;
+        # target_tensor > zeros <=> z=1, so negative coefficient = 0.
+        neg_p_sub = tf.where(y > zeros, zeros, pred) # negative sample 寻找负样本，并进行填充
+        per_entry_cross_ent = - alpha * (pos_p_sub ** gamma) * tf.log(tf.clip_by_value(pred, 1e-8, 1.0)) \
+                              - (1 - alpha) * (neg_p_sub ** gamma) * tf.log(tf.clip_by_value(1.0 - pred, 1e-8, 1.0))
+
+        return tf.reduce_sum(per_entry_cross_ent)
 
     def _average_gradients(self, tower_grads):
         """
