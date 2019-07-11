@@ -20,16 +20,16 @@ class Hparams:
     parser.add_argument('--eval_batch_size', default=32, type=int, help='the size of eval batch')
     parser.add_argument('--vocab_size', default=10596, type=int, help='the size of vocab')
 
-    parser.add_argument('--lr', default=0.005, type=float, help="learning rate")
+    parser.add_argument('--lr', default=0.001, type=float, help="learning rate")
     parser.add_argument('--warmup_steps', default=4000, type=int)
     parser.add_argument('--logdir', default="log/2", help="log directory")
     parser.add_argument('--num_epochs', default=5, type=int)
     parser.add_argument('--evaldir', default="eval/1", help="evaluation dir")
 
     # model
-    parser.add_argument('--maxlen1', default=32, type=int, help="maximum length of a question")
+    parser.add_argument('--maxlen1', default=20, type=int, help="maximum length of a question")
     parser.add_argument('--maxlen2', default=256, type=int, help="maximum length of a evidence")
-    parser.add_argument('--num_units', default=256, type=int, help="vocab hidden size")
-    parser.add_argument('--dropout_rate', default=0.7, type=float, help="dropout rate")
+    parser.add_argument('--num_units', default=128, type=int, help="vocab hidden size")
+    parser.add_argument('--dropout_rate', default=0.1, type=float, help="dropout rate")
     parser.add_argument('--gpu_nums', default=1, type=int,
                         help="gpu amount, which can allow how many gpus to train this model")
