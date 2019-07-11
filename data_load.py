@@ -29,8 +29,8 @@ def _load_data(fpath, maxlen1, maxlen2):
     for data in df:
         question = data[1]
         evidence = data[0]
-        if len(question) > maxlen1: continue
-        if len(evidence) > maxlen2: continue
+        if len(question) > maxlen1 or len(question) < 5: continue
+        if len(evidence) > maxlen2 or len(evidence) < 20: continue
 
         label = data[3]
         start = data[4]
@@ -101,7 +101,7 @@ def _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, m
 
     # when training, the dataset will be shuffle
     if shuffle:
-        dataset = dataset.shuffle(128*batch_size*gpu_nums)
+        dataset = dataset.shuffle(buffer_size=batch_size*gpu_nums)
 
     dataset = dataset.repeat() # iterator forever
     dataset = dataset.padded_batch(batch_size=batch_size*gpu_nums,
@@ -127,11 +127,6 @@ def get_batch(fpath, maxlen1, maxlen2, vocab_fpath, batch_size, gpu_nums, shuffl
     num_samples
     """
     questions, evidences, labels = _load_data(fpath, maxlen1, maxlen2)
-    # for question in questions:
-    #     if len(question) > maxlen1:
-    #         print(1111)
-    # for evidence in evidences:
-    #     if len(evidence) > maxlen2: print(2222)
     batches = _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, maxlen1, maxlen2, shuffle=shuffle)
     num_batches = calc_num_batches(len(questions), batch_size * gpu_nums)
     return batches, num_batches, len(questions)
