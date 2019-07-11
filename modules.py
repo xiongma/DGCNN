@@ -41,10 +41,11 @@ def atrous_conv1d(X, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'
     """
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         filters = X.shape.as_list()[-1]
-        conv1 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, padding=padding)
-        conv1 = tf.add(conv1, 0-X)
 
-        conv2 = tf.sigmoid(tf.layers.conv1d(X, filters, window, dilation_rate=dilation, padding=padding))
+        conv1 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, padding=padding)
+        conv1 = tf.subtract(conv1, X)
+
+        conv2 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, activation=tf.sigmoid, padding=padding)
 
         conv = X + tf.multiply(conv1, conv2)
 
@@ -53,14 +54,15 @@ def atrous_conv1d(X, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'
 
         return conv
 
-def attention_encoder(X, dropout_rate=0.7, scope='attention_encoder'):
+def attention_encoder(X, dropout_rate=0.1, scope='attention_encoder'):
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         time_step = X.shape.as_list()[-2]
+        num_units = X.shape.as_list()[-1]
 
         # fully connection
-        X = tf.layers.dropout(X, rate=dropout_rate)
-        attention = tf.layers.dense(X, time_step, use_bias=False, activation=tf.tanh, name='tanh_fully')
-        attention = tf.layers.dense(attention, time_step, use_bias=False, activation=None, name='softmax_fully')
+        # X = tf.layers.dropout(X, rate=dropout_rate)
+        attention = tf.layers.dense(X, num_units, use_bias=False, activation=tf.tanh, name='tanh_fully')
+        attention = tf.layers.dense(attention, time_step, use_bias=False, name='softmax_fully')
 
         # mask
         padding_num = -2 ** 32 + 1 # multiply max number, let 0 index of timestep equal softmax 0
