@@ -81,9 +81,9 @@ class DGCNN:
 
             return p_global, p_start, p_end
 
-    def train(self, xs, ys, labels):
+    def train_multi(self, xs, ys, labels):
         """
-        train DGCNN model
+        train DGCNN model with multi GPUs
         :param xs: question
         :param ys: evidence
         :param labels: labels, contain global, start, end
@@ -120,9 +120,9 @@ class DGCNN:
 
         return train_op, loss, summaries, global_step_
 
-    def train1(self, xs, ys, labels):
+    def train_single(self, xs, ys, labels):
         """
-        train DGCNN model
+        train DGCNN model with single GPU or CPU
         :param xs: question
         :param ys: evidence
         :param labels: labels, contain global, start, end
@@ -194,17 +194,6 @@ class DGCNN:
         p_end_loss = self.focal_loss(p_end, p_end_true)
 
         loss = p_start_loss + p_end_loss
-
-        return loss
-
-    def _cross_entropy(self, y, y_pred):
-        """
-        calculate cross entropy
-        :param y: true label, one hot
-        :param y_pred: predicted
-        :return: loss
-        """
-        loss = -tf.reduce_mean(y * tf.log(tf.clip_by_value(y_pred, 1e-5, 1.0))) # tf.clip_by_value, prevent loss Nan
 
         return loss
 
