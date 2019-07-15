@@ -58,7 +58,7 @@ logging.info("# Load model")
 m = DGCNN(hp)
 
 # get op
-train_op, train_loss, train_summaries, global_step = m.train1(xs, ys, labels)
+train_op, train_loss, train_summaries, global_step = m.train_single(xs, ys, labels)
 indexs, eval_loss, eval_summaries = m.eval(xs, ys, labels)
 
 token2idx, idx2token = load_vocab(hp.vocab)
