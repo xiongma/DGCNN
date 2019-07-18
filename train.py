@@ -11,10 +11,11 @@ import os
 
 from tqdm import tqdm
 
-from data_load import get_batch, load_vocab
+from bert_vec import BertVec
+from data_load import get_batch
 from hparams import Hparams
 from model import DGCNN
-from utils import import_tf, save_variable_specs
+from utils import import_tf, save_variable_specs, concat_inputs
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,37 +32,38 @@ logging.info("# Prepare train/eval batches")
 train_batches, num_train_batches, num_train_samples = get_batch(hp.train,
                                                                 hp.maxlen1,
                                                                 hp.maxlen2,
-                                                                hp.vocab,
                                                                 hp.batch_size,
                                                                 hp.gpu_nums,
+                                                                hp.bert_pre,
                                                                 shuffle=True)
 
 eval_batches, num_eval_batches, num_eval_samples = get_batch(hp.eval,
                                                              hp.maxlen1,
                                                              hp.maxlen2,
-                                                             hp.vocab,
                                                              hp.eval_batch_size,
                                                              hp.gpu_nums,
+                                                             hp.bert_pre,
                                                              shuffle=False)
 
 handle = tf.placeholder(tf.string, shape=[])
 iter = tf.data.Iterator.from_string_handle(
     handle, train_batches.output_types, train_batches.output_shapes)
-
 # create a iter of the correct shape and type
 xs, ys, labels = iter.get_next()
+
 logging.info('# init data')
 training_iter = train_batches.make_one_shot_iterator()
 val_iter = eval_batches.make_initializable_iterator()
 
 logging.info("# Load model")
 m = DGCNN(hp)
+# load Bert
+input_ids, input_masks, segment_ids = concat_inputs(xs, ys)
+vec = BertVec(hp.bert_pre, input_ids, input_masks, segment_ids)
 
-# get op
-train_op, train_loss, train_summaries, global_step = m.train_single(xs, ys, labels)
-indexs, eval_loss, eval_summaries = m.eval(xs, ys, labels)
-
-token2idx, idx2token = load_vocab(hp.vocab)
+logging.info('# Get train and eval op')
+train_op, train_loss, train_summaries, global_step = m.train_single(vec, xs[1], ys[1], labels)
+indexs, eval_loss, eval_summaries = m.eval(vec, xs[1], ys[1], labels)
 
 logging.info("# Session")
 saver = tf.train.Saver(max_to_keep=hp.num_epochs)
@@ -88,5 +90,4 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
     for i in tqdm(range(_gs, total_steps + 1)):
         _, _loss, _gs, _train_sum = sess.run([train_op, train_loss, global_step, train_summaries],
                                              feed_dict={handle: train_handle})
-        print(_loss)
-        summary_writer.add_summary(_train_sum, _gs)
+        print(_loss, _gs)

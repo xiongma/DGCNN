@@ -11,42 +11,7 @@ import os
 
 import tensorflow as tf
 
-__all__ = ['label_smoothing', 'split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs']
-
-def label_smoothing(inputs, epsilon=0.1):
-    '''Applies label smoothing. See 5.4 and https://arxiv.org/abs/1512.00567.
-    inputs: 3d tensor. [N, T, V], where V is the number of vocabulary.
-    epsilon: Smoothing rate.
-
-    For example,
-
-    ```
-    import tensorflow as tf
-    inputs = tf.convert_to_tensor([[[0, 0, 1],
-       [0, 1, 0],
-       [1, 0, 0]],
-
-      [[1, 0, 0],
-       [1, 0, 0],
-       [0, 1, 0]]], tf.float32)
-
-    outputs = label_smoothing(inputs)
-
-    with tf.Session() as sess:
-        print(sess.run([outputs]))
-
-    >>
-    [array([[[ 0.03333334,  0.03333334,  0.93333334],
-        [ 0.03333334,  0.93333334,  0.03333334],
-        [ 0.93333334,  0.03333334,  0.03333334]],
-
-       [[ 0.93333334,  0.03333334,  0.03333334],
-        [ 0.93333334,  0.03333334,  0.03333334],
-        [ 0.03333334,  0.93333334,  0.03333334]]], dtype=float32)]
-    ```
-    '''
-    V = tf.cast(tf.shape(inputs)[-1], tf.float32)  # number of channels
-    return ((1 - epsilon) * inputs) + (epsilon / V)
+__all__ = ['split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs', 'concat_inputs']
 
 def split_inputs(*args):
     """
@@ -108,3 +73,18 @@ def save_variable_specs(fpath):
         fout.write("num_params: {}\n".format(num_params))
         fout.write("\n".join(params))
     logging.info("Variables info has been saved.")
+
+def concat_inputs(xs, ys):
+    """
+    concat input ids, input masks, segment ids
+    :param xs: xs, input ids, input mask, segment ids
+    :param ys: ys, input ids, input mask, segment ids
+    :return: input ids, contain question and evidence input ids
+             input masks, contain question and evidence input masks
+             segment ids, contain question and evidence segment ids
+    """
+    input_ids = tf.concat([xs[0], ys[0]], axis=0)
+    input_masks = tf.concat([xs[1], ys[1]], axis=0)
+    segment_ids = tf.concat([xs[2], ys[2]], axis=0)
+
+    return input_ids, input_masks, segment_ids
