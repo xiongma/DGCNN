@@ -8,36 +8,32 @@ blog: http://www.cnblogs.com/callyblog/
 
 import tensorflow as tf
 
-from modules import atrous_conv1d, attention_encoder, get_token_embeddings, positional_encoding
-from utils import split_inputs, label_smoothing
+from modules import atrous_conv1d, attention_encoder, get_embedding, create_kernel_initializer, create_bias_initializer
+from utils import split_inputs
 
 __all__ = ['DGCNN']
 
 class DGCNN:
-    def __init__(self, hp, zero_pad=True):
-        self.embedding = get_token_embeddings(hp.vocab_size, hp.num_units, zero_pad=zero_pad)
-        self.num_units = hp.num_units
+    def __init__(self, hp):
         self.hp = hp
 
-    def question(self, xs):
+    def question(self, ques_embedd):
         """
         DGCNN question encoder, you can see more detail in https://www.cnblogs.com/callyblog/p/11111493.html
-        :param xs:
-        :return:
+        :param ques_embedd: question embedding by bert
+        :return: question attention
         """
         with tf.variable_scope('question', reuse=tf.AUTO_REUSE):
-            ques_embedd = tf.nn.embedding_lookup(self.embedding, xs)
+            ques_conv = atrous_conv1d(ques_embedd, window=3, dilation=1)
 
-            ques_conv = atrous_conv1d(ques_embedd, window=3, dilation=1, padding='SAME')
-
-            attention = attention_encoder(ques_conv, dropout_rate=self.hp.dropout_rate)
+            attention = attention_encoder(ques_conv)
 
             return attention
 
-    def evidence(self, ys, attention, dropout_rate, maxlen, training):
+    def evidence(self, evidence_embedd, attention, dropout_rate, maxlen, training):
         """
         evidence encoding, decoding, see https://www.cnblogs.com/callyblog/p/11111493.html
-        :param ys: evidences
+        :param evidence_embedd: evidence embedding by bert
         :param attention: question encoding embedding
         :param dropout_rate: dropout rate
         :param maxlen: evidence max length
@@ -47,13 +43,10 @@ class DGCNN:
                  p_end probability [N, maxlen]
         """
         with tf.variable_scope('evidence', reuse=tf.AUTO_REUSE):
-            evidence_embedd = tf.nn.embedding_lookup(self.embedding, ys)
-            positional_embedding = positional_encoding(evidence_embedd, maxlen)
-
-            attention = tf.tile(tf.expand_dims(attention, 1), [1, maxlen, 1]) # [N, T, H1]
+            attention = tf.tile(tf.expand_dims(attention, 1), [1, maxlen, 1]) # [N, T, 768]
 
             # concat position embedding, question attention embedding
-            evidence_embedd = tf.concat([evidence_embedd, attention, positional_embedding], axis=-1) # [N, T, H+maxlen+H]
+            evidence_embedd = tf.concat([evidence_embedd, attention], axis=-1) # [N, T, 768+maxlen]
 
             # feature fusion
             evidence_conv = atrous_conv1d(evidence_embedd, dilation=1, window=1, scope='feature_fusion')
@@ -63,23 +56,38 @@ class DGCNN:
             evidence_conv = atrous_conv1d(evidence_conv, dilation=2, window=3, scope='atrous_conv1_dilation2')
             evidence_conv = atrous_conv1d(evidence_conv, dilation=4, window=3, scope='atrous_conv1_dilation4')
 
-            ques_mater_attention = attention_encoder(evidence_conv, dropout_rate=dropout_rate) # [N, H]
+            ques_mater_attention = attention_encoder(evidence_conv) # [N, H]
 
             # dropout
             ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=dropout_rate, training=training)
             evidence_conv = tf.layers.dropout(evidence_conv, rate=dropout_rate, training=training)
 
-            # fully connection
-            p_global = tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global') # [N, 1]
-            p_start = tf.layers.dense(evidence_conv, 128, activation=tf.tanh, name='p_start_tanh') # [N, T, 128]
-            p_start = tf.layers.dense(p_start, 2, activation=tf.sigmoid, name='p_start_sigmoid') # [N, T, 2]
-            p_end = tf.layers.dense(evidence_conv, 128, activation=tf.tanh, name='p_end_tanh') # [N, T, 128]
-            p_end = tf.layers.dense(p_end, 2, activation=tf.sigmoid, name='p_end_sigmoid') # [N, T, 2]
+            # p global
+            p_global = tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global',
+                                       kernel_initializer=create_kernel_initializer(),
+                                       bias_initializer=create_bias_initializer('dense')) # [N, 1]
 
-            p_start = tf.expand_dims(p_global, axis=-1) * p_start # [N, T, 2]
-            p_end = tf.expand_dims(p_global, axis=-1) * p_end # [N, T, 2]
+            # p start
+            p_start = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_start_tanh',
+                                      kernel_initializer=create_kernel_initializer(),
+                                      bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
+            p_start = tf.layers.dense(p_start, 1, activation=tf.sigmoid, name='p_start_sigmoid',
+                                      kernel_initializer=create_kernel_initializer(),
+                                      bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
 
-            return p_global, p_start, p_end
+            # p end
+            p_end = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_end_tanh',
+                                    kernel_initializer=create_kernel_initializer(),
+                                    bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
+            p_end = tf.layers.dense(p_end, 1, activation=tf.sigmoid, name='p_end_sigmoid',
+                                    kernel_initializer=create_kernel_initializer(),
+                                    bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
+
+            p_global_ = tf.expand_dims(p_global, axis=-1)
+            p_start = p_global_ * p_start # [N, T, 1]
+            p_end = p_global_ * p_end # [N, T, 1]
+
+            return p_start, p_end
 
     def train_multi(self, xs, ys, labels):
         """
@@ -120,40 +128,45 @@ class DGCNN:
 
         return train_op, loss, summaries, global_step_
 
-    def train_single(self, xs, ys, labels):
+    def train_single(self, vec, masks1, masks2, labels):
         """
         train DGCNN model with single GPU or CPU
-        :param xs: question
-        :param ys: evidence
+        :param vec: Bert Vector instance
+        :param masks1: question masks
+        :param masks2: evidence masks
         :param labels: labels, contain global, start, end
         :return: train op, loss, global step, tensorflow summary
         """
         global_step = tf.train.get_or_create_global_step()
         global_step_ = global_step * self.hp.gpu_nums
-
         optimizer = tf.train.AdamOptimizer(self.hp.lr)
-        ques_atten = self.question(xs)
-        p_global, p_start, p_end = self.evidence(ys, ques_atten, self.hp.dropout_rate, self.hp.maxlen2, True)
-        loss = self._calc_loss(labels, p_global, p_start, p_end)
+        ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
+
+        ques_atten = self.question(ques_embedd)
+        p_start, p_end = self.evidence(evidence_embedd, ques_atten, self.hp.dropout_rate, self.hp.maxlen2, True)
+        loss = self._calc_loss(labels, p_start, p_end)
         train_op = optimizer.minimize(loss, global_step=global_step)
         tf.summary.scalar("train_loss", loss)
         summaries = tf.summary.merge_all()
 
         return train_op, loss, summaries, global_step_
 
-    def eval(self, xs, ys, labels):
+    def eval(self, vec, masks1, masks2, labels):
         """
         evaluate model, just use one gpu to evaluate
-        :param xs: questions
-        :param ys: evidences
-        :param labels: labels
+        :param vec: Bert Vector instance
+        :param masks1: question masks
+        :param masks2: evidence masks
+        :param labels: labels, contain global, start, end
         :return: answer indexes, loss, tensorflow summary
         """
-        ques_atten = self.question(xs)
-        p_global, p_start, p_end = self.evidence(ys, ques_atten, 1.0, self.hp.maxlen2, False)
+        ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
+
+        ques_atten = self.question(ques_embedd)
+        p_start, p_end = self.evidence(evidence_embedd, ques_atten, 1.0, self.hp.maxlen2, False)
 
         # loss
-        loss = self._calc_loss(labels, p_global, p_start, p_end)
+        loss = self._calc_loss(labels, p_start, p_end)
 
         # get answer
         p_start = tf.argmax(p_start, axis=1) # [N]
@@ -166,52 +179,27 @@ class DGCNN:
 
         return p, loss, summaries
 
-    def _calc_loss(self, labels, p_global, p_start, p_end):
+    def _calc_loss(self, labels, p_start, p_end):
         """
         calculate loss
         :param labels: labels, contain p_global, p_start, p_end
-        :param p_global: predicted p_global
         :param p_start: predicted p_start
         :param p_end: predicted p_end
         :return: p_global loss + p_start loss + p_end loss
         """
-        # global loss
-        p_global_true = labels[:, 0] # [N]
-        p_global_true = label_smoothing(tf.one_hot(p_global_true, depth=2)) # [N, 2]
-        p_global = tf.squeeze(tf.stack([1-p_global, p_global], axis=2), axis=1)
-        p_global_loss = self._focal_loss(p_global, p_global_true)
-
         # start loss
         p_start_true = labels[:, 1]
-        p_start_true = tf.one_hot(p_start_true, depth=self.hp.maxlen2, dtype=tf.int32)
-        p_start_true = label_smoothing(tf.one_hot(p_start_true, depth=2))
+        p_start_true = tf.expand_dims(tf.one_hot(p_start_true, depth=self.hp.maxlen2), axis=-1)
         p_start_loss = self.focal_loss(p_start, p_start_true)
 
         # end loss
         p_end_true = labels[:, 2]
-        p_end_true = tf.one_hot(p_end_true, depth=self.hp.maxlen2, dtype=tf.int32)
-        p_end_true = label_smoothing(tf.one_hot(p_end_true, depth=2))
+        p_end_true = tf.expand_dims(tf.one_hot(p_end_true, depth=self.hp.maxlen2), axis=-1)
         p_end_loss = self.focal_loss(p_end, p_end_true)
 
         loss = p_start_loss + p_end_loss
 
         return loss
-
-    def _focal_loss(self, pred, y, alpha=0.25, gamma=2):
-        """
-        focal loss
-        :param pred: predicted
-        :param y: true
-        :param alpha: alpha, default 0.25
-        :param gamma: gamma, default 2
-        :return: focal loss
-        """
-        zeros = tf.zeros_like(pred, dtype=pred.dtype)
-        pos_corr = tf.where(y > zeros, y-pred, zeros)
-        neg_corr = tf.where(y > zeros, zeros, pred)
-        fl_loss = -alpha * (pos_corr ** gamma) * tf.log(pred) - (1-alpha) * (neg_corr ** gamma) * tf.log(1.0 - pred)
-        fl_loss = tf.reduce_mean(tf.reduce_sum(fl_loss, axis=1))
-        return fl_loss
 
     def focal_loss(self, pred, y, alpha=0.25, gamma=2):
         r"""Compute focal loss for predictions.
