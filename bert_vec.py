@@ -49,23 +49,6 @@ def convert_single_example(tokenizer, text_a, max_len):
 
     return input_ids, input_mask, segment_ids
 
-def _truncate_seq_pair(tokens_a, tokens_b, max_len):
-    """
-    Truncates a sequence pair in place to the maximum length.
-    :param tokens_a: text a
-    :param tokens_b: text b
-    :param max_len: max sequence length
-    """
-    while True:
-        total_length = len(tokens_a) + len(tokens_b)
-
-        if total_length <= max_len - 3:
-            break
-        if len(tokens_a) > len(tokens_b):
-            tokens_a.pop()
-        else:
-            tokens_b.pop()
-
 class BertVec:
     def __init__(self, pre_bert, input_ids, input_mask, segment_ids):
         self.ckpt = tf.train.get_checkpoint_state(pre_bert).all_model_checkpoint_paths[-1]
