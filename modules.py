@@ -38,6 +38,7 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         filters = X.shape.as_list()[-1]
 
+        # conv1
         conv1 = tf.layers.conv1d(X,
                                  filters,
                                  window,
@@ -47,6 +48,7 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
                                  bias_initializer=create_bias_initializer('conv'))
         conv1 = tf.subtract(conv1, X)
 
+        # conv2
         conv2 = tf.layers.conv1d(X,
                                  filters,
                                  window,
@@ -58,27 +60,6 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
 
         conv = X + tf.multiply(conv1, conv2)
 
-        # mask
-        conv = tf.where(tf.equal(X, 0), X, conv)
-
-        return conv
-
-def atrous_conv1d1(X, window=3, dilation=1, padding='SAME', scope='atrous_conv1d'):
-    """
-    expansion of convolution: X + tf.multiply((Conv1D1(X)-X), Conv1D2(X))
-    :param X: embedding
-    :param dilation: the size of expansion
-    :param window: the size of kernel length
-    """
-    with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
-        filters = X.shape.as_list()[-1]
-
-        conv1 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, padding=padding)
-        conv1_ = 1 - conv1
-
-        conv2 = tf.layers.conv1d(X, filters, window, dilation_rate=dilation, activation=tf.sigmoid, padding=padding)
-
-        conv = tf.multiply(X, conv1_) + tf.multiply(conv1, conv2)
         # mask
         conv = tf.where(tf.equal(X, 0), X, conv)
 
@@ -100,14 +81,12 @@ def attention_encoder(X, scope='attention_encoder'):
                                     use_bias=False,
                                     activation=tf.tanh,
                                     name='tanh_fully',
-                                    kernel_initializer=create_kernel_initializer(),
-                                    bias_initializer=create_bias_initializer('dense'))
+                                    kernel_initializer=create_kernel_initializer())
         attention = tf.layers.dense(attention,
                                     time_step,
                                     use_bias=False,
                                     name='softmax_fully',
-                                    kernel_initializer=create_kernel_initializer(),
-                                    bias_initializer=create_bias_initializer('dense'))
+                                    kernel_initializer=create_kernel_initializer())
 
         # mask
         padding_num = -2 ** 32 + 1 # multiply max number, let 0 index of timestep equal softmax 0
