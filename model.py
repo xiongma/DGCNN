@@ -30,20 +30,18 @@ class DGCNN:
 
             return attention
 
-    def evidence(self, evidence_embedd, attention, dropout_rate, maxlen, training):
+    def evidence(self, evidence_embedd, attention, training):
         """
         evidence encoding, decoding, see https://www.cnblogs.com/callyblog/p/11111493.html
         :param evidence_embedd: evidence embedding by bert
         :param attention: question encoding embedding
-        :param dropout_rate: dropout rate
-        :param maxlen: evidence max length
         :param training: whether train, if True, use dropout
         :return: p_global probability [N]
                  p_start probability [N, maxlen]
                  p_end probability [N, maxlen]
         """
         with tf.variable_scope('evidence', reuse=tf.AUTO_REUSE):
-            attention = tf.tile(tf.expand_dims(attention, 1), [1, maxlen, 1]) # [N, T, 768]
+            attention = tf.tile(tf.expand_dims(attention, 1), [1, self.hp.maxlen2, 1]) # [N, T, 768]
 
             # concat position embedding, question attention embedding
             evidence_embedd = tf.concat([evidence_embedd, attention], axis=-1) # [N, T, 768+maxlen]
@@ -59,8 +57,8 @@ class DGCNN:
             ques_mater_attention = attention_encoder(evidence_conv) # [N, H]
 
             # dropout
-            ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=dropout_rate, training=training)
-            evidence_conv = tf.layers.dropout(evidence_conv, rate=dropout_rate, training=training)
+            ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=self.hp.dropout_rate, training=training)
+            evidence_conv = tf.layers.dropout(evidence_conv, rate=self.hp.dropout_rate, training=training)
 
             # p global
             p_global = tf.layers.dense(ques_mater_attention, 1, activation=tf.sigmoid, name='p_global',
@@ -110,11 +108,10 @@ class DGCNN:
                 with tf.device("/gpu:%d" % no):
                     with tf.name_scope("tower_%d" % no):
                         ques_atten = self.question(datas[0][no])
-                        p_global, p_start, p_end = self.evidence(datas[1][no], ques_atten, self.hp.dropout_rate,
-                                                                 self.hp.maxlen2, True)
+                        p_start, p_end = self.evidence(datas[1][no], ques_atten, True)
 
                         tf.get_variable_scope().reuse_variables()
-                        loss = self._calc_loss(datas[2][no], p_global, p_start, p_end)
+                        loss = self._calc_loss(datas[2][no], p_start, p_end)
                         losses.append(loss)
                         grads = optimizer.compute_gradients(loss)
                         tower_grads.append(grads)
@@ -143,7 +140,7 @@ class DGCNN:
         ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
 
         ques_atten = self.question(ques_embedd)
-        p_start, p_end = self.evidence(evidence_embedd, ques_atten, self.hp.dropout_rate, self.hp.maxlen2, True)
+        p_start, p_end = self.evidence(evidence_embedd, ques_atten, True)
         loss = self._calc_loss(labels, p_start, p_end)
         train_op = optimizer.minimize(loss, global_step=global_step)
         tf.summary.scalar("train_loss", loss)
@@ -163,7 +160,7 @@ class DGCNN:
         ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
 
         ques_atten = self.question(ques_embedd)
-        p_start, p_end = self.evidence(evidence_embedd, ques_atten, 1.0, self.hp.maxlen2, False)
+        p_start, p_end = self.evidence(evidence_embedd, ques_atten, False)
 
         # loss
         loss = self._calc_loss(labels, p_start, p_end)
