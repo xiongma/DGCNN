@@ -75,6 +75,12 @@ class BertVec:
         self._init_graph(input_ids, input_mask, segment_ids)
 
     def _init_graph(self, input_ids, input_mask, segment_ids):
+        """
+        init bert graph
+        :param input_ids: tensorflow placeholder input ids
+        :param input_mask: tensorflow placeholder input mask
+        :param segment_ids: tensorflow placeholder segment ids
+        """
         self._model = modeling.BertModel(config=self.bert_config,
                                          is_training=False,
                                          input_ids=input_ids,
