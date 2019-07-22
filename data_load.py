@@ -92,7 +92,7 @@ def _input_fn(questions, evidences, labels, batch_size, gpu_nums, maxlen2, shuff
     #     dataset = dataset.shuffle(buffer_size=batch_size*gpu_nums)
 
     dataset = dataset.repeat() # iterator forever
-    dataset = dataset.batch(batch_size=batch_size*gpu_nums, drop_remainder=False).prefetch(1)
+    dataset = dataset.batch(batch_size=batch_size*gpu_nums, drop_remainder=False)
     return dataset
 
 def get_batch(fpath, maxlen1, maxlen2, batch_size, gpu_nums, bert_pre, shuffle=False):

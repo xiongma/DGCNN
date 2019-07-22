@@ -44,7 +44,7 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
                                  window,
                                  dilation_rate=dilation,
                                  padding='SAME',
-                                 kernel_initializer=create_kernel_initializer(),
+                                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                  bias_initializer=create_bias_initializer('conv'))
         conv1 = tf.subtract(conv1, X)
 
@@ -55,7 +55,7 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
                                  dilation_rate=dilation,
                                  activation=tf.sigmoid,
                                  padding='SAME',
-                                 kernel_initializer=create_kernel_initializer(),
+                                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                  bias_initializer=create_bias_initializer('conv'))
 
         conv = X + tf.multiply(conv1, conv2)
@@ -74,10 +74,9 @@ def attention_encoder(X, scope='attention_encoder'):
     """
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         time_step = X.shape.as_list()[-2]
-        num_units = X.shape.as_list()[-1]
 
         attention = tf.layers.dense(X,
-                                    num_units,
+                                    64,
                                     use_bias=False,
                                     activation=tf.tanh,
                                     name='tanh_fully',

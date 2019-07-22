@@ -90,4 +90,6 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
     for i in tqdm(range(_gs, total_steps + 1)):
         _, _loss, _gs, _train_sum = sess.run([train_op, train_loss, global_step, train_summaries],
                                              feed_dict={handle: train_handle})
-        print(_loss, _gs)
+        summary_writer.add_summary(_train_sum, _gs)
+        if _gs % 1000 == 0 and _gs != 0:
+            saver.save(sess, hp.logdir)

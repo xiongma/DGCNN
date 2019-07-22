@@ -36,9 +36,8 @@ class DGCNN:
         :param evidence_embedd: evidence embedding by bert
         :param attention: question encoding embedding
         :param training: whether train, if True, use dropout
-        :return: p_global probability [N]
-                 p_start probability [N, maxlen]
-                 p_end probability [N, maxlen]
+        :return: p_start probability [N, maxlen, 1]
+                 p_end probability [N, maxlen, 1]
         """
         with tf.variable_scope('evidence', reuse=tf.AUTO_REUSE):
             attention = tf.tile(tf.expand_dims(attention, 1), [1, self.hp.maxlen2, 1]) # [N, T, 768]
@@ -69,7 +68,7 @@ class DGCNN:
             p_start = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_start_tanh',
                                       kernel_initializer=create_kernel_initializer(),
                                       bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
-            p_start = tf.layers.dense(p_start, 1, activation=tf.sigmoid, name='p_start_sigmoid',
+            p_start = tf.layers.dense(p_start, 2, activation=tf.sigmoid, name='p_start_sigmoid',
                                       kernel_initializer=create_kernel_initializer(),
                                       bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
 
@@ -77,7 +76,7 @@ class DGCNN:
             p_end = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_end_tanh',
                                     kernel_initializer=create_kernel_initializer(),
                                     bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
-            p_end = tf.layers.dense(p_end, 1, activation=tf.sigmoid, name='p_end_sigmoid',
+            p_end = tf.layers.dense(p_end, 2, activation=tf.sigmoid, name='p_end_sigmoid',
                                     kernel_initializer=create_kernel_initializer(),
                                     bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
 
@@ -186,12 +185,14 @@ class DGCNN:
         """
         # start loss
         p_start_true = labels[:, 1]
-        p_start_true = tf.expand_dims(tf.one_hot(p_start_true, depth=self.hp.maxlen2), axis=-1)
+        # p_start_true = tf.expand_dims(tf.one_hot(p_start_true, depth=self.hp.maxlen2), axis=-1)
+        p_start_true = tf.one_hot(tf.one_hot(p_start_true, depth=self.hp.maxlen2, dtype=tf.int32), depth=2)
         p_start_loss = self.focal_loss(p_start, p_start_true)
 
         # end loss
         p_end_true = labels[:, 2]
-        p_end_true = tf.expand_dims(tf.one_hot(p_end_true, depth=self.hp.maxlen2), axis=-1)
+        # p_end_true = tf.expand_dims(tf.one_hot(p_end_true, depth=self.hp.maxlen2), axis=-1)
+        p_end_true = tf.one_hot(tf.one_hot(p_end_true, depth=self.hp.maxlen2, dtype=tf.int32), depth=2)
         p_end_loss = self.focal_loss(p_end, p_end_true)
 
         loss = p_start_loss + p_end_loss
@@ -224,8 +225,9 @@ class DGCNN:
         neg_p_sub = tf.where(y > zeros, zeros, pred) # negative sample 寻找负样本，并进行填充
         per_entry_cross_ent = - alpha * (pos_p_sub ** gamma) * tf.log(tf.clip_by_value(pred, 1e-8, 1.0)) \
                               - (1 - alpha) * (neg_p_sub ** gamma) * tf.log(tf.clip_by_value(1.0 - pred, 1e-8, 1.0))
-
-        return tf.reduce_sum(per_entry_cross_ent)
+        per_entry_cross_ent = tf.reduce_mean(tf.reduce_sum(per_entry_cross_ent, axis=[1, 2]))
+        # per_entry_cross_ent = tf.reduce_sum(per_entry_cross_ent)
+        return per_entry_cross_ent
 
     def _average_gradients(self, tower_grads):
         """
