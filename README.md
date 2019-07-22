@@ -1,6 +1,5 @@
 ## Later I will complete the README.md
 # A Implementation with Dilation Gate CNN.
-This model is come from JianLin Su. I just implement it, Thank for him give his ideas
 
 ## Requirements
 * python==3.x (Let's move on to python 3 if you still use python 2)
