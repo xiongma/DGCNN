@@ -13,7 +13,7 @@ and I add bert to this model, just use pretrain bert vector, so the vocab is fro
 large, if u want to train this model, to be sure you have large model training environment.
 
 ### Structure
-<img src="fig/structure.jpg">
+<img src="fig/structure.png">
 
 ## Training
 You can use WebQA to train this model, or you want to change the dataset to yours, change the way of load data in data_load.py
