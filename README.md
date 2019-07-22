@@ -2,7 +2,7 @@
 
 ## Requirements
 * python==3.x (Let's move on to python 3 if you still use python 2)
-* tensorflow==1.12.0
+* tensorflow>=1.12.0
 * tqdm>=4.28.1
 
 ## Model Structure
