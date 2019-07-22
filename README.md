@@ -1,4 +1,4 @@
-# A Implementation with Dilation Gate CNN.
+# A Implementation with Dilation Gate CNN For Machine Reading Comprehension.
 
 ## Requirements
 * python==3.x (Let's move on to python 3 if you still use python 2)
