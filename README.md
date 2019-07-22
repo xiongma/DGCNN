@@ -18,5 +18,5 @@ large, if u want to train this model, to be sure you have large model training e
 You can use WebQA to train this model, or you want to change the dataset to yours, change the way of load data in data_load.py
 * Run
 ```
-python train.py --logdir myLog --batch_size 32 --train myTrain --bert_pre bertPreTrain
+python train.py --logdir myLog --batch_size 32 --train myTrain --eval myEval --bert_pre bertPreTrain
 ```
