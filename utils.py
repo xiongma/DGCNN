@@ -11,7 +11,7 @@ import os
 
 import tensorflow as tf
 
-__all__ = ['split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs', 'concat_inputs']
+__all__ = ['split_inputs', 'calc_num_batches', 'import_tf', 'save_variable_specs', 'concat_inputs', 'noam_scheme']
 
 def split_inputs(*args):
     """
@@ -88,3 +88,38 @@ def concat_inputs(xs, ys):
     segment_ids = tf.concat([xs[2], ys[2]], axis=0)
 
     return input_ids, input_masks, segment_ids
+
+def noam_scheme(global_step, num_warmup_steps, num_train_steps, init_lr, warmup=True):
+    """
+    decay learning rate
+    if warmup > global step, the learning rate will be global_step/num_warmup_steps * init_lr
+    if warmup < global step, the learning rate will be polynomial decay
+    :param global_step: global steps
+    :param num_warmup_steps: number of warm up steps
+    :param num_train_steps: number of train steps
+    :param init_lr: initial learning rate
+    :param warmup: if True, it will warm up learning rate
+    :return: learning rate
+    """
+    learning_rate = tf.constant(value=init_lr, shape=[], dtype=tf.float32)
+    learning_rate = tf.train.polynomial_decay(learning_rate,
+                                                global_step,
+                                                num_train_steps,
+                                                end_learning_rate=0.0,
+                                                power=1.0,
+                                                cycle=False)
+
+    if warmup:
+        global_steps_int = tf.cast(global_step, tf.int32)
+        warmup_steps_int = tf.constant(num_warmup_steps, dtype=tf.int32)
+
+        global_steps_float = tf.cast(global_steps_int, tf.float32)
+        warmup_steps_float = tf.cast(warmup_steps_int, tf.float32)
+
+        warmup_percent_done = global_steps_float / warmup_steps_float
+        warmup_learning_rate = init_lr * warmup_percent_done
+
+        is_warmup = tf.cast(global_steps_int < warmup_steps_int, tf.float32)
+        learning_rate = ((1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
+
+    return learning_rate

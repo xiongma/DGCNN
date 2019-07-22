@@ -62,7 +62,8 @@ input_ids, input_masks, segment_ids = concat_inputs(xs, ys)
 vec = BertVec(hp.bert_pre, input_ids, input_masks, segment_ids)
 
 logging.info('# Get train and eval op')
-train_op, train_loss, train_summaries, global_step = m.train_single(vec, xs[1], ys[1], labels)
+total_steps = hp.num_epochs * num_train_batches
+train_op, train_loss, train_summaries, global_step = m.train_single(vec, xs[1], ys[1], labels, total_steps)
 indexs, eval_loss, eval_summaries = m.eval(vec, xs[1], ys[1], labels)
 
 logging.info("# Session")
@@ -85,11 +86,11 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
     val_handle = sess.run(val_iter.string_handle())
 
     # start train
-    total_steps = hp.num_epochs * num_train_batches
     _gs = sess.run(global_step)
     for i in tqdm(range(_gs, total_steps + 1)):
         _, _loss, _gs, _train_sum = sess.run([train_op, train_loss, global_step, train_summaries],
                                              feed_dict={handle: train_handle})
         summary_writer.add_summary(_train_sum, _gs)
-        if _gs % 1000 == 0 and _gs != 0:
-            saver.save(sess, hp.logdir)
+        print(_loss)
+        # if _gs % 1000 == 0 and _gs != 0:
+        #     saver.save(sess, hp.logdir)

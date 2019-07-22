@@ -9,7 +9,7 @@ blog: http://www.cnblogs.com/callyblog/
 import tensorflow as tf
 
 from modules import atrous_conv1d, attention_encoder, get_embedding, create_kernel_initializer, create_bias_initializer
-from utils import split_inputs
+from utils import split_inputs, noam_scheme
 
 __all__ = ['DGCNN']
 
@@ -124,18 +124,27 @@ class DGCNN:
 
         return train_op, loss, summaries, global_step_
 
-    def train_single(self, vec, masks1, masks2, labels):
+    def train_single(self, vec, masks1, masks2, labels, total_steps):
         """
         train DGCNN model with single GPU or CPU
         :param vec: Bert Vector instance
         :param masks1: question masks
         :param masks2: evidence masks
         :param labels: labels, contain global, start, end
+        :param total_steps: total train steps
         :return: train op, loss, global step, tensorflow summary
         """
         global_step = tf.train.get_or_create_global_step()
         global_step_ = global_step * self.hp.gpu_nums
-        optimizer = tf.train.AdamOptimizer(self.hp.lr)
+
+        warmup = False
+        if self.hp.warmup_rate > 0.0:
+            warmup = True
+
+        warmup_steps = int(total_steps * self.hp.warmup_rate)
+        lr = noam_scheme(global_step_, warmup_steps, total_steps, self.hp.lr, warmup)
+
+        optimizer = tf.train.AdamOptimizer(lr)
         ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
 
         ques_atten = self.question(ques_embedd)
