@@ -1,4 +1,3 @@
-## Later I will complete the README.md
 # A Implementation with Dilation Gate CNN.
 
 ## Requirements
