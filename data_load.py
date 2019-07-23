@@ -8,6 +8,7 @@ blog: http://www.cnblogs.com/callyblog/
 
 import pandas as pd
 import tensorflow as tf
+from tqdm import tqdm
 
 from bert_vec import get_tokenizer
 from utils import calc_num_batches
@@ -29,7 +30,7 @@ def _load_data(fpath, maxlen1, maxlen2, tokenizer):
     questions = []
     evidences = []
     labels = []
-    for data in df:
+    for data in tqdm(df[:400000]):
         question = data[1]
         evidence = data[0]
         if not isinstance(question, str) or not isinstance(evidence, str):
@@ -88,8 +89,8 @@ def _input_fn(questions, evidences, labels, batch_size, gpu_nums, maxlen2, shuff
                                              args=(questions, evidences, labels))
 
     # when training, the dataset will be shuffle
-    # if shuffle:
-    #     dataset = dataset.shuffle(buffer_size=batch_size*gpu_nums)
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=batch_size*gpu_nums)
 
     dataset = dataset.repeat() # iterator forever
     dataset = dataset.batch(batch_size=batch_size*gpu_nums, drop_remainder=False)
