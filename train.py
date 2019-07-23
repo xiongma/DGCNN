@@ -63,7 +63,7 @@ vec = BertVec(hp.bert_pre, input_ids, input_masks, segment_ids)
 
 logging.info('# Get train and eval op')
 total_steps = hp.num_epochs * num_train_batches
-train_op, train_loss, train_summaries, global_step = m.train_single(vec, xs[1], ys[1], labels, total_steps)
+train_op, train_loss, train_summaries, global_step = m.train_multi(vec, xs[1], ys[1], labels, total_steps)
 indexs, eval_loss, eval_summaries = m.eval(vec, xs[1], ys[1], labels)
 
 logging.info("# Session")

@@ -86,7 +86,7 @@ class DGCNN:
 
             return p_start, p_end
 
-    def train_multi(self, xs, ys, labels):
+    def train_multi(self, vec, masks1, masks2, labels, total_steps):
         """
         train DGCNN model with multi GPUs
         :param xs: question
@@ -98,9 +98,17 @@ class DGCNN:
         global_step = tf.train.get_or_create_global_step()
         global_step_ = global_step * self.hp.gpu_nums
 
-        optimizer = tf.train.AdamOptimizer(self.hp.lr)
+        warmup = False
+        if self.hp.warmup_rate > 0.0:
+            warmup = True
+        warmup_steps = int(total_steps * self.hp.warmup_rate)
+
+        lr = noam_scheme(global_step_, warmup_steps, total_steps, self.hp.lr, warmup)
+        optimizer = tf.train.AdamOptimizer(lr)
+
+        ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
+        datas = split_inputs(self.hp.gpu_nums, ques_embedd, evidence_embedd, labels)
         losses = []
-        datas = split_inputs(self.hp.gpu_nums, xs, ys, labels)
 
         with tf.variable_scope(tf.get_variable_scope()):
             for no in range(self.hp.gpu_nums):
@@ -135,14 +143,13 @@ class DGCNN:
         :return: train op, loss, global step, tensorflow summary
         """
         global_step = tf.train.get_or_create_global_step()
-        global_step_ = global_step * self.hp.gpu_nums
 
         warmup = False
         if self.hp.warmup_rate > 0.0:
             warmup = True
 
         warmup_steps = int(total_steps * self.hp.warmup_rate)
-        lr = noam_scheme(global_step_, warmup_steps, total_steps, self.hp.lr, warmup)
+        lr = noam_scheme(global_step, warmup_steps, total_steps, self.hp.lr, warmup)
 
         optimizer = tf.train.AdamOptimizer(lr)
         ques_embedd, evidence_embedd = get_embedding(vec, self.hp.maxlen1, masks1, masks2)
@@ -154,7 +161,7 @@ class DGCNN:
         tf.summary.scalar("train_loss", loss)
         summaries = tf.summary.merge_all()
 
-        return train_op, loss, summaries, global_step_
+        return train_op, loss, summaries, global_step
 
     def eval(self, vec, masks1, masks2, labels):
         """
@@ -196,19 +203,19 @@ class DGCNN:
         p_start_true = labels[:, 1]
         # p_start_true = tf.expand_dims(tf.one_hot(p_start_true, depth=self.hp.maxlen2), axis=-1)
         p_start_true = tf.one_hot(tf.one_hot(p_start_true, depth=self.hp.maxlen2, dtype=tf.int32), depth=2)
-        p_start_loss = self.focal_loss(p_start, p_start_true)
+        p_start_loss = self._focal_loss(p_start, p_start_true)
 
         # end loss
         p_end_true = labels[:, 2]
         # p_end_true = tf.expand_dims(tf.one_hot(p_end_true, depth=self.hp.maxlen2), axis=-1)
         p_end_true = tf.one_hot(tf.one_hot(p_end_true, depth=self.hp.maxlen2, dtype=tf.int32), depth=2)
-        p_end_loss = self.focal_loss(p_end, p_end_true)
+        p_end_loss = self._focal_loss(p_end, p_end_true)
 
         loss = p_start_loss + p_end_loss
 
         return loss
 
-    def focal_loss(self, pred, y, alpha=0.25, gamma=2):
+    def _focal_loss(self, pred, y, alpha=0.25, gamma=2):
         r"""Compute focal loss for predictions.
             Multi-labels Focal loss formula:
                 FL = -alpha * (z-p)^gamma * log(p) -(1-alpha) * p^gamma * log(1-p)
@@ -247,9 +254,15 @@ class DGCNN:
         average_grads = []
         for grad_and_vars in zip(*tower_grads):
             grads = []
+            # print(grad_and_vars)
             for g, _ in grad_and_vars:
+                if g is None:
+                    continue
                 expend_g = tf.expand_dims(g, 0)
                 grads.append(expend_g)
+
+            if len(grads) == 0:
+                continue
             grad = tf.concat(grads, 0)
             grad = tf.reduce_mean(grad, 0)
             v = grad_and_vars[0][1]
