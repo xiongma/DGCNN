@@ -1,0 +1,33 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+'''
+date: 2019/7/5
+mail: cally.maxiong@gmail.com
+blog: http://www.cnblogs.com/callyblog/
+'''
+import argparse
+
+class Hparams:
+    parser = argparse.ArgumentParser()
+
+    ## dataset files
+    parser.add_argument('--train', default='data/WebQA/train.xlsx', help="data for train")
+    parser.add_argument('--eval', default='data/WebQA/test_ir.xlsx', help="data for evaluation")
+    parser.add_argument('--logdir', default="log", help="log directory")
+    parser.add_argument('--vocab', default="vocab", help="vocab directory")
+
+    # training scheme
+    parser.add_argument('--batch_size', default=64, type=int, help='the size of train batch')
+    parser.add_argument('--eval_batch_size', default=128, type=int, help='the size of eval batch')
+    parser.add_argument('--vocab_size', default=10596, type=int, help='the size of vocab')
+
+    # model
+    parser.add_argument('--lr', default=0.001, type=float, help="learning rate")
+    parser.add_argument('--warmup_rate', default=0.0, type=float, help="learning rate warmup rate")
+    parser.add_argument('--num_epochs', default=8, type=int)
+    parser.add_argument('--maxlen1', default=20, type=int, help="maximum length of a question")
+    parser.add_argument('--maxlen2', default=128, type=int, help="maximum length of a evidence")
+    parser.add_argument('--num_units', default=256, type=int, help="number of vocab embedding")
+    parser.add_argument('--dropout_rate', default=0.2, type=float, help="dropout rate")
+    parser.add_argument('--gpu_nums', default=1, type=int,
+                        help="gpu amount, which can allow how many gpus to train this model")
