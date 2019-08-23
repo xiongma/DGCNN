@@ -21,7 +21,7 @@ class DGCNN:
         self.num_units = hp.num_units
         self.hp = hp
 
-    def question(self, xs):
+    def question(self, xs, mask):
         """
         DGCNN question encoder, you can see more detail in https://www.cnblogs.com/callyblog/p/11111493.html
         :param xs:
@@ -30,13 +30,13 @@ class DGCNN:
         with tf.variable_scope('question', reuse=tf.AUTO_REUSE):
             ques_embedd = tf.nn.embedding_lookup(self.embedding, xs)
 
-            ques_conv = atrous_conv1d(ques_embedd, window=3, dilation=1)
+            ques_conv = atrous_conv1d(ques_embedd, mask, window=3, dilation=1)
 
-            attention = attention_encoder(ques_conv)
+            attention = attention_encoder(ques_conv, mask)
 
             return attention
 
-    def evidence(self, ys, attention, training):
+    def evidence(self, ys, mask, attention, training):
         """
         evidence encoding, decoding, see https://www.cnblogs.com/callyblog/p/11111493.html
         :param ys: evidences
@@ -58,14 +58,15 @@ class DGCNN:
             evidence_embedd = tf.concat([evidence_embedd, attention, positional_embedding], axis=-1) # [N, T, H+maxlen+H]
 
             # feature fusion
-            evidence_conv = atrous_conv1d(evidence_embedd, dilation=1, window=1, scope='feature_fusion')
+            evidence_conv = atrous_conv1d(evidence_embedd, mask, dilation=1, window=1, scope='feature_fusion')
 
             # conv
-            evidence_conv = atrous_conv1d(evidence_conv, dilation=1, window=3, scope='atrous_conv1_dilation1')
-            evidence_conv = atrous_conv1d(evidence_conv, dilation=2, window=3, scope='atrous_conv1_dilation2')
-            evidence_conv = atrous_conv1d(evidence_conv, dilation=4, window=3, scope='atrous_conv1_dilation4')
+            evidence_conv = atrous_conv1d(evidence_conv, mask, dilation=1, window=3, scope='atrous_conv1_dilation1')
+            evidence_conv = atrous_conv1d(evidence_conv, mask, dilation=2, window=3, scope='atrous_conv1_dilation2')
+            evidence_conv = atrous_conv1d(evidence_conv, mask, dilation=4, window=3, scope='atrous_conv1_dilation4')
 
-            ques_mater_attention = attention_encoder(evidence_conv) # [N, H]
+            evidence_conv = tf.concat([evidence_conv, attention], axis=2)
+            ques_mater_attention = attention_encoder(evidence_conv, mask) # [N, H]
 
             # dropout
             ques_mater_attention = tf.layers.dropout(ques_mater_attention, rate=self.hp.dropout_rate, training=training)
@@ -77,18 +78,12 @@ class DGCNN:
                                        bias_initializer=create_bias_initializer('dense')) # [N, 1]
 
             # p start
-            p_start = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_start_tanh',
-                                      kernel_initializer=create_kernel_initializer(),
-                                      bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
-            p_start = tf.layers.dense(p_start, 1, activation=tf.sigmoid, name='p_start_sigmoid',
+            p_start = tf.layers.dense(evidence_conv, 1, activation=tf.sigmoid, name='p_start_sigmoid',
                                       kernel_initializer=create_kernel_initializer(),
                                       bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
 
             # p end
-            p_end = tf.layers.dense(evidence_conv, 64, activation=tf.tanh, name='p_end_tanh',
-                                    kernel_initializer=create_kernel_initializer(),
-                                    bias_initializer=create_bias_initializer('dense')) # [N, T, 64]
-            p_end = tf.layers.dense(p_end, 1, activation=tf.sigmoid, name='p_end_sigmoid',
+            p_end = tf.layers.dense(evidence_conv, 1, activation=tf.sigmoid, name='p_end_sigmoid',
                                     kernel_initializer=create_kernel_initializer(),
                                     bias_initializer=create_bias_initializer('dense')) # [N, T, 1]
 
@@ -126,8 +121,8 @@ class DGCNN:
             for no in range(self.hp.gpu_nums):
                 with tf.device("/gpu:%d" % no):
                     with tf.name_scope("tower_%d" % no):
-                        ques_atten = self.question(datas[0][no])
-                        _, p_start, p_end = self.evidence(datas[1][no], ques_atten, True)
+                        ques_atten = self.question(datas[0][0][no], datas[0][1][no])
+                        _, p_start, p_end = self.evidence(datas[1][0][no], datas[1][1][no], ques_atten, True)
 
                         tf.get_variable_scope().reuse_variables()
                         loss = self._calc_loss(datas[2][no], p_start, p_end)
@@ -152,17 +147,13 @@ class DGCNN:
         :param labels: labels
         :return: answer indexes, loss, tensorflow summary
         """
-        ques_atten = self.question(xs)
-        p_global, p_start, p_end = self.evidence(ys, ques_atten, False)
+        x, x_mask = xs
+        y, y_mask = ys
+        ques_atten = self.question(x, x_mask)
+        p_global, p_start, p_end = self.evidence(y, y_mask, ques_atten, False)
 
         # loss
         loss = self._calc_loss(labels, p_start, p_end)
-
-        # get answer
-        # p_start = tf.argmax(p_start[:, :, 1], axis=1) # [N]
-        # p_end = tf.argmax(p_end[:, :,  1], axis=1) # [N]
-
-        # indexs = tf.stack([p_start, p_end], axis=-1)
 
         tf.summary.scalar('eval_loss', loss)
         summaries = tf.summary.merge_all()

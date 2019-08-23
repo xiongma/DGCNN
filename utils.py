@@ -60,7 +60,14 @@ def split_inputs(*args):
     """
     gpu_nums = args[0]
     args = args[1:]
-    return [tf.split(arg, num_or_size_splits=gpu_nums, axis=0) for arg in args]
+    split_data = []
+    for arg in args[:2]:
+        sub = []
+        for a in arg:
+            sub.append(tf.split(a, num_or_size_splits=gpu_nums, axis=0))
+        split_data.append(sub)
+    split_data.append(tf.split(args[-1], num_or_size_splits=gpu_nums, axis=0))
+    return split_data
 
 def calc_num_batches(total_num, batch_size):
     '''Calculates the number of batches.

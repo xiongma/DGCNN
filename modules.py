@@ -50,7 +50,7 @@ def get_token_embeddings(vocab_size, num_units, zero_pad=True):
                                     embeddings[1:, :]), 0)
         return embeddings
 
-def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
+def atrous_conv1d(X, mask, window=3, dilation=1, scope='atrous_conv1d'):
     """
     expansion of convolution
     :param X: embedding
@@ -83,45 +83,28 @@ def atrous_conv1d(X, window=3, dilation=1, scope='atrous_conv1d'):
         conv = X + tf.multiply(conv1, conv2)
 
         # mask
-        conv = tf.where(tf.equal(X, 0), X, conv)
+        mask = tf.expand_dims(tf.cast(mask, dtype=tf.float32), axis=2)
+        conv = conv * mask
 
         return conv
 
-def attention_encoder(X, scope='attention_encoder'):
+def attention_encoder(X, mask, scope='attention_encoder'):
     """
     attention encoder, see more detail in https://www.cnblogs.com/callyblog/p/11111493.html
     :param X: inputs
+    :param mask: mask
     :param scope: scope name, default attention_encoder
     :return: sum of every time context vector
     """
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
-        time_step = X.shape.as_list()[-2]
-
-        attention = tf.layers.dense(X,
-                                    64,
-                                    use_bias=False,
-                                    activation=tf.tanh,
-                                    name='tanh_fully',
-                                    kernel_initializer=create_kernel_initializer())
-        attention = tf.layers.dense(attention,
-                                    time_step,
-                                    use_bias=False,
-                                    name='softmax_fully',
-                                    kernel_initializer=create_kernel_initializer())
-
-        # mask
-        padding_num = -2 ** 32 + 1 # multiply max number, let 0 index of timestep equal softmax 0
-        masks = tf.sign(tf.reduce_sum(tf.abs(X), axis=-1))  # [N, T]
-        masks = tf.tile(tf.expand_dims(masks, axis=1), [1, time_step, 1])  # [N, T, T]
-        paddings = tf.ones_like(masks) * padding_num
-        attention = tf.where(tf.equal(masks, 0), paddings, attention)
-
-        # softmax
-        attention = tf.nn.softmax(attention)
-
-        # attention * X
-        outputs = tf.matmul(attention, X) # [N, T, H]
-        outputs = tf.reduce_sum(outputs, axis=1) # [N, H]
+        X_ = X
+        X = tf.layers.dense(X, X.get_shape().as_list()[-1], use_bias=False, activation=tf.tanh)
+        X = tf.layers.dense(X, 1, use_bias=False)
+        mask = tf.cast(tf.expand_dims(mask, axis=-1), dtype=tf.float32)
+        pad_num = tf.multiply(1.0 - mask, tf.cast(1e30, dtype=tf.float32))
+        X = X - pad_num
+        X = tf.nn.softmax(X, 1)
+        outputs = tf.reduce_sum(X * X_, 1)
 
         return outputs
 
