@@ -78,7 +78,7 @@ def _generator_fn(questions, evidences, labels, vocab_fpath):
         tokens1 = [token2idx.get(token, token2idx['<unk>']) for token in list(question.decode('utf-8'))]
         tokens2 = [token2idx.get(token, token2idx['<unk>']) for token in list(evidence.decode('utf-8'))]
 
-        yield tokens1, tokens2, label
+        yield (tokens1, [1] * len(tokens1)), (tokens2, [1] * len(tokens2)), label
 
 def _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, maxlen1, maxlen2, shuffle=False):
     """
@@ -94,10 +94,10 @@ def _input_fn(questions, evidences, labels, vocab_fpath, batch_size, gpu_nums, m
     :param shuffle: whether shuffle data, When train model, it's True
     :return: tensorflow dataset
     """
-    shapes = ([None]), ([None]), ([None])
-    padded_shapes = ([maxlen1]), ([maxlen2]), ([3])
-    types = (tf.int32), (tf.int32), (tf.int32)
-    paddings = (0), (0), (0)
+    shapes = ([None], [None]), ([None], [None]), ([None])
+    padded_shapes = ([maxlen1], [maxlen1]), ([maxlen2], [maxlen2]), ([3])
+    types = (tf.int32, tf.int32), (tf.int32, tf.int32), (tf.int32)
+    paddings = (0, 0), (0, 0), (0)
     dataset = tf.data.Dataset.from_generator(generator=_generator_fn,
                                              output_shapes=shapes,
                                              output_types=types,
